@@ -101,7 +101,7 @@ def create_form(
     if hookah: addons.append("💨 Кальян")
     if photographer: addons.append("📸 Фотограф")
     addons_str = ", ".join(addons) if addons else "нет"
-    message = f"Новый заказ!\n...\nДоп. услуги: {addons_str}\nСумма: {price}₽"
+    message = f"Новый заказ!\n{name},{phone}\nДоп. услуги: {addons_str}\nСумма: {price}₽"
     RostovHomes(message)
     return RedirectResponse(url=f"/success?booking_id={booking.id}", status_code=303)
 
