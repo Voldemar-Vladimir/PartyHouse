@@ -13,8 +13,6 @@ import requests
 from Admin_Info import token,chat_id,secret
 
 secret_key = secret()
-toke=token()
-chat_id=chat_id()
 security = HTTPBasic()
 
 def get_db():
@@ -51,11 +49,11 @@ def create_form(
     email: str = Form(""),
     mini_bar: bool = Form(False),
     transfer: bool = Form(False),
-    peoples: str = Form(...),
     karaoke: bool = Form(False),
     dj: bool = Form(False),
     hookah: bool = Form(False),
     photographer: bool = Form(False),
+    peoples: str = Form(...),
     db: Session = Depends(get_db)
 ):
     days = (check_out - check_in).days
@@ -90,12 +88,18 @@ def create_form(
         email=email,
         mini_bar=mini_bar,
         transfer=transfer,
+        karaoke = karaoke,
+        dj = dj,
+        hookah = hookah,
+        photographer = photographer,
         total_price=price,
         peoples=peoples,
     )
     db.add(booking)
     db.commit()
     addons = []
+    if transfer: addons.append("Трансфер")
+    if mini_bar: addons.append("Минибар")
     if karaoke: addons.append("🎤 Караоке")
     if dj: addons.append("🎧 Диджей")
     if hookah: addons.append("💨 Кальян")
