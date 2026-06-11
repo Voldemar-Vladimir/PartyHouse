@@ -50,8 +50,32 @@
                         <li class="mb-2"><strong>💨 Кальян:</strong> ${'Да' if all.hookah else 'Нет'}</li>
                         <li class="mb-2"><strong>📸 Фотограф:</strong> ${'Да' if all.photographer else 'Нет'}</li>
                         <li class="mb-2"><strong>💰 Сумма:</strong> <span class="text-success fw-bold">${all.total_price} ₽</span></li>
-                        <li class="mb-2"><strong>📌 Статус:</strong> <span class="badge bg-info">${all.status}</span></li>
+                        <li class="mb-2"><strong>📌 Статус брони:</strong>
+                            <span class="badge ${'bg-success' if all.status == 'confirmed' else 'bg-warning'}">
+                                ${'Подтверждена' if all.status == 'confirmed' else 'Ожидает оплаты'}
+                            </span>
+                        </li>
+                        <li class="mb-2"><strong>💳 Статус оплаты:</strong>
+                            <span class="badge ${'bg-success' if all.payment_status == 'paid' else 'bg-secondary'}">
+                                ${'Оплачено' if all.payment_status == 'paid' else 'Не оплачено'}
+                            </span>
+                        </li>
                     </ul>
+
+                    <!-- Блок оплаты: показываем кнопку только если не оплачено -->
+                    % if all.payment_status != 'paid':
+                    <div class="alert alert-warning mt-3">
+                        ⚠️ Для подтверждения бронирования и закрепления дат необходимо произвести оплату.
+                    </div>
+                    <a href="/fake_pay/${all.id}" class="btn btn-success w-100 rounded-pill py-2 mb-3">
+                        💳 Оплатить (закрепить место) — 600 ₽
+                    </a>
+                    % else:
+                    <div class="alert alert-success mt-3">
+                        ✅ Бронь подтверждена! Даты закреплены за вами.
+                    </div>
+                    % endif
+
                     <a href="/" class="btn btn-primary rounded-pill px-4">
                         <i class="bi bi-house-door"></i> На главную
                     </a>

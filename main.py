@@ -11,6 +11,31 @@ from pydantic import BaseModel, Field
 from mako.lookup import TemplateLookup
 import requests
 from Admin_Info import token,chat_id,secret
+from datetime import date, timedelta
+from apscheduler.schedulers.background import BackgroundScheduler
+
+def clean_expired_bookings():
+    db = SessionLocal()
+    now_utc = datetime.datetime.now(datetime.timezone.utc)
+    db.query(Booking).filter(
+        Booking.payment_status == 'pending',
+        Booking.expires_at < now_utc
+    ).delete()
+    db.commit()
+    db.close()
+
+scheduler = BackgroundScheduler()
+scheduler.add_job(clean_expired_bookings, 'interval', hours=1)
+scheduler.start()
+def is_home_available(home_id: int, check_in: date, check_out: date, db: Session):
+    overlapping = db.query(Booking).filter(
+        Booking.home_id == home_id,
+        Booking.status == 'confirmed',
+        Booking.check_in < check_out,
+        Booking.check_out > check_in
+    ).first()
+    return overlapping is None
+
 
 secret_key = secret()
 security = HTTPBasic()
@@ -25,6 +50,20 @@ def get_db():
 app = FastAPI()
 template_lookup = TemplateLookup(directories=["templates"])
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/api/blocked_dates/{home_id}")
+def get_blocked_dates(home_id: int, db: Session = Depends(get_db)):
+    bookings = db.query(Booking).filter(
+        Booking.home_id == home_id,
+        Booking.status == 'confirmed'
+    ).all()
+    blocked = []
+    for b in bookings:
+        delta = (b.check_out - b.check_in).days
+        for i in range(delta):
+            date_str = (b.check_in + timedelta(days=i)).isoformat()
+            blocked.append(date_str)
+    return {"blocked": blocked}
 
 homes = [
     {"id": 1, "price_per_day": 6000, "distance_to_sea": 300, "rooms": 4, "pool": False,
@@ -42,8 +81,8 @@ def root(request: Request):
 @app.post("/booking")
 def create_form(
     home_id: int = Form(...),
-    check_in: datetime.date = Form(...),
-    check_out: datetime.date = Form(...),
+    check_in: str = Form(...),          # строка, а не date
+    check_out: str = Form(...),         # строка
     name: str = Form(...),
     phone: str = Form(...),
     email: str = Form(""),
@@ -56,7 +95,18 @@ def create_form(
     peoples: str = Form(...),
     db: Session = Depends(get_db)
 ):
-    days = (check_out - check_in).days
+    # Преобразуем строки в даты
+    try:
+        check_in_date = datetime.datetime.strptime(check_in, '%Y-%m-%d').date()
+        check_out_date = datetime.datetime.strptime(check_out, '%Y-%m-%d').date()
+    except ValueError:
+        raise HTTPException(400, "Неверный формат даты")
+
+    # Проверяем, свободны ли даты
+    if not is_home_available(home_id, check_in_date, check_out_date, db):
+        raise HTTPException(400, "Эти дни уже забронированы")
+
+    days = (check_out_date - check_in_date).days
     if days <= 0:
         raise HTTPException(400, "Дата выезда должна быть позже даты заезда")
     if days < 2:
@@ -67,36 +117,35 @@ def create_form(
         raise HTTPException(404, "Дом не найден")
 
     price = home["price_per_day"] * days
-    if mini_bar:
-        price += 4000
-    if transfer:
-        price += 1500
-    if karaoke:
-        price += 2000
-    if dj:
-        price += 3000
-    if hookah:
-        price += 1500
-    if photographer:
-        price += 4000
+    if mini_bar: price += 4000
+    if transfer: price += 1500
+    if karaoke: price += 2000
+    if dj: price += 3000
+    if hookah: price += 1500
+    if photographer: price += 4000
+
     booking = Booking(
         home_id=home_id,
-        check_in=check_in,
-        check_out=check_out,
+        check_in=check_in_date,
+        check_out=check_out_date,
         name=name,
         phone=phone,
         email=email,
         mini_bar=mini_bar,
         transfer=transfer,
-        karaoke = karaoke,
-        dj = dj,
-        hookah = hookah,
-        photographer = photographer,
+        karaoke=karaoke,
+        dj=dj,
+        hookah=hookah,
+        photographer=photographer,
         total_price=price,
         peoples=peoples,
+        payment_status='pending',
+        expires_at=datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(minutes=30)
     )
     db.add(booking)
     db.commit()
+
+    # Формируем сообщение в Telegram
     addons = []
     if transfer: addons.append("Трансфер")
     if mini_bar: addons.append("Минибар")
@@ -109,6 +158,18 @@ def create_form(
     RostovHomes(message)
     return RedirectResponse(url=f"/success?booking_id={booking.id}", status_code=303)
 
+@app.get("/fake_pay/{booking_id}")
+def fake_pay(booking_id: int, db: Session = Depends(get_db)):
+    booking = db.get(Booking, booking_id)  # новый стиль
+    if not booking:
+        raise HTTPException(404, "Бронь не найдена")
+    if booking.status == 'confirmed':
+        return RedirectResponse(url=f"/success?booking_id={booking_id}")
+    booking.status = 'confirmed'
+    booking.payment_status = 'paid'
+    db.commit()
+    RostovHomes(f"✅ Фейк-оплата! Бронь #{booking.id} подтверждена.")
+    return RedirectResponse(url=f"/success?booking_id={booking_id}")
 @app.get("/success")
 def success(booking_id: int = None, db: Session = Depends(get_db)):
     all = db.query(Booking).get(booking_id) if booking_id else None

@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timedelta
 from sqlalchemy import create_engine, Column, Integer, String, Date, Boolean, DateTime
 from sqlalchemy.orm import declarative_base, sessionmaker
 
@@ -26,5 +26,9 @@ class Booking(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     peoples = Column(String)
 
+    # ----- НОВЫЕ ПОЛЯ ДЛЯ ОПЛАТЫ -----
+    payment_id = Column(String, unique=True, nullable=True)
+    payment_status = Column(String, default='pending')   # pending, paid, failed
+    expires_at = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(minutes=30))
 
 Base.metadata.create_all(bind=engine)
